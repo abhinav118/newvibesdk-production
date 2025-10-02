@@ -19,7 +19,7 @@ import { AgentActionKey, AIModels, InferenceMetadata } from './config.types';
 // import { SecretsService } from '../../database';
 import { RateLimitService } from '../../services/rate-limit/rateLimits';
 import { AuthUser } from '../../types/auth-types';
-import { getUserConfigurableSettings } from '../../config';
+import { getUserConfigurableSettings, getGlobalConfigurableSettings } from '../../config';
 import { SecurityError, RateLimitExceededError } from 'shared/types/errors';
 import { executeToolWithDefinition } from '../tools/customTools';
 import { RateLimitType } from 'worker/services/rate-limit/config';
@@ -360,7 +360,7 @@ export type InferResponseString = {
 /**
  * Execute all tool calls from OpenAI response
  */
-async function executeToolCalls(openAiToolCalls: ChatCompletionMessageFunctionToolCall[], originalDefinitions: ToolDefinition[]): Promise<ToolCallResult[]> {
+async function executeToolCalls(openAiToolCalls: ChatCompletionMessageFunctionToolCall[], originalDefinitions: ToolDefinition[], env: Env): Promise<ToolCallResult[]> {
     const toolDefinitions = new Map(originalDefinitions.map(td => [td.function.name, td]));
     return Promise.all(
         openAiToolCalls.map(async (tc) => {
@@ -370,7 +370,7 @@ async function executeToolCalls(openAiToolCalls: ChatCompletionMessageFunctionTo
                 if (!td) {
                     throw new Error(`Tool ${tc.function.name} not found`);
                 }
-                const result = await executeToolWithDefinition(td, args);
+                const result = await executeToolWithDefinition(td, args, env);
                 console.log(`Tool execution result for ${tc.function.name}:`, result);
                 return {
                     id: tc.id,
@@ -440,7 +440,8 @@ export async function infer<OutputSchema extends z.AnyZodObject>({
             avatarUrl: undefined
         };
 
-        const userConfig = await getUserConfigurableSettings(env, metadata.userId)
+        const globalConfig = await getGlobalConfigurableSettings(env);
+        const userConfig = await getUserConfigurableSettings(env, metadata.userId, globalConfig)
         // Maybe in the future can expand using config object for other stuff like global model configs?
         await RateLimitService.enforceLLMCallsRateLimit(env, userConfig.security.rateLimit, authUser)
 
@@ -645,7 +646,7 @@ export async function infer<OutputSchema extends z.AnyZodObject>({
         let executedToolCalls: ToolCallResult[] = [];
         if (tools) {
             // console.log(`Tool calls:`, JSON.stringify(toolCalls, null, 2), 'definition:', JSON.stringify(tools, null, 2));
-            executedToolCalls = await executeToolCalls(toolCalls, tools);
+            executedToolCalls = await executeToolCalls(toolCalls, tools, env);
         }
 
         if (executedToolCalls.length) {

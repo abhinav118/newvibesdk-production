@@ -1,4 +1,6 @@
-import { env } from 'cloudflare:workers'
+/// <reference path="../../../../worker-configuration.d.ts" />
+// Remove this import at the top:
+// import { env } from 'cloudflare:workers'
 import { ToolDefinition } from '../types';
 
 interface SerpApiResponse {
@@ -94,11 +96,13 @@ const formatSearchResults = (
         : `No results found for "${query}". Try: https://www.google.com/search?q=${encodeURIComponent(query)}`;
 };
 
+// Update to accept env parameter
 async function performWebSearch(
     query: string,
-    numResults = 5,
+    numResults: number,
+    env: Env  // Add env parameter
 ): Promise<string> {
-    const apiKey = env.SERPAPI_KEY;
+    const apiKey = env.SERPAPI_KEY;  // Now using env parameter instead of global
     if (!apiKey) {
         return `🔍 Web search requires SerpAPI key. Get one at https://serpapi.com/\nFallback: https://www.google.com/search?q=${encodeURIComponent(query)}`;
     }
@@ -204,7 +208,8 @@ type WebSearchArgs = {
 
 type WebSearchResult = { content?: string; error?: string }
 
-const toolWebSearch = async (args: WebSearchArgs): Promise<WebSearchResult> => {
+// Update toolWebSearch to accept and use env
+const toolWebSearch = async (args: WebSearchArgs, env: Env): Promise<WebSearchResult> => {
     const { query, url, num_results = 5 } = args;
     if (typeof url === 'string') {
         const content = await fetchWebContent(url);
@@ -214,6 +219,7 @@ const toolWebSearch = async (args: WebSearchArgs): Promise<WebSearchResult> => {
         const content = await performWebSearch(
             query,
             num_results as number,
+            env  // Pass env to performWebSearch
         );
         return { content };
     }

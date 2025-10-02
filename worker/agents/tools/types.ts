@@ -1,3 +1,4 @@
+/// <reference path="../../../worker-configuration.d.ts" />
 import { ChatCompletionFunctionTool } from 'openai/resources';
 export interface MCPServerConfig {
 	name: string;
@@ -18,8 +19,9 @@ export interface ToolCallResult {
 	result?: unknown;
 }
 
+// Update to include env parameter
 export type ToolImplementation<TArgs = Record<string, unknown>, TResult = unknown> = 
-	(args: TArgs) => Promise<TResult>;
+	(args: TArgs, env: Env) => Promise<TResult>;
 
 export type ToolDefinition<
     TArgs = Record<string, unknown>,
