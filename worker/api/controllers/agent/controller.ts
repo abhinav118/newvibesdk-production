@@ -78,10 +78,18 @@ export class CodingAgentController extends BaseController {
             const modelConfigService = new ModelConfigService(env);
                                 
             // Fetch all user model configs, api keys and agent instance at once
-            const [userConfigsRecord, agentInstance] = await Promise.all([
-                user ? modelConfigService.getUserModelConfigs(user.id) : Promise.resolve({}),
-                getAgentStub(env, agentId, false, this.logger)
-            ]);
+            let userConfigsRecord: any;
+            let agentInstance: any;
+            
+            try {
+                [userConfigsRecord, agentInstance] = await Promise.all([
+                    user ? modelConfigService.getUserModelConfigs(user.id) : Promise.resolve({}),
+                    getAgentStub(env, agentId, false, this.logger)
+                ]);
+            } catch (error) {
+                this.logger.error('Error fetching user configs or creating agent stub:', error);
+                return CodingAgentController.createErrorResponse(`Failed to initialize agent: ${error instanceof Error ? error.message : String(error)}`, 500);
+            }
                                 
             // Convert Record to Map and extract only ModelConfig properties
             const userModelConfigs = new Map();
@@ -109,7 +117,19 @@ export class CodingAgentController extends BaseController {
                 modelConfigsCount: Object.keys(userModelConfigs).length,
             });
 
-            const { sandboxSessionId, templateDetails, selection } = await getTemplateForQuery(env, inferenceContext, query, this.logger);
+            let sandboxSessionId: string;
+            let templateDetails: any;
+            let selection: any;
+            
+            try {
+                const templateResult = await getTemplateForQuery(env, inferenceContext, query, this.logger);
+                sandboxSessionId = templateResult.sandboxSessionId;
+                templateDetails = templateResult.templateDetails;
+                selection = templateResult.selection;
+            } catch (error) {
+                this.logger.error('Error getting template for query:', error);
+                return CodingAgentController.createErrorResponse(`Failed to get template for query: ${error instanceof Error ? error.message : String(error)}`, 500);
+            }
 
             const websocketUrl = `${url.protocol === 'https:' ? 'wss:' : 'ws:'}//${url.host}/api/agent/${agentId}/ws`;
             const httpStatusUrl = `${url.origin}/api/agent/${agentId}`;
@@ -137,10 +157,15 @@ export class CodingAgentController extends BaseController {
                 templateInfo: { templateDetails, selection },
                 sandboxSessionId
             }, body.agentMode || defaultCodeGenArgs.agentMode) as Promise<CodeGenState>;
+            
             agentPromise.then(async (_state: CodeGenState) => {
                 writer.write("terminate");
                 writer.close();
                 this.logger.info(`Agent ${agentId} terminated successfully`);
+            }).catch((error) => {
+                this.logger.error(`Agent ${agentId} initialization failed:`, error);
+                writer.write({error: `Agent initialization failed: ${error.message}`});
+                writer.close();
             });
 
             this.logger.info(`Agent ${agentId} init launched successfully`);
