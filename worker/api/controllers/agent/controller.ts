@@ -59,16 +59,18 @@ export class CodingAgentController extends BaseController {
                 }
             });
             const writer = writable.getWriter();
-            // Check if user is authenticated (required for app creation)
-            const user = context.user!;
-            try {
-                await RateLimitService.enforceAppCreationRateLimit(env, context.config.security.rateLimit, user, request);
-            } catch (error) {
-                if (error instanceof Error) {
-                    return CodingAgentController.createErrorResponse(error, 429);
-                } else {
-                    this.logger.error('Unknown error in enforceAppCreationRateLimit', error);
-                    return CodingAgentController.createErrorResponse(JSON.stringify(error), 429);
+            // Handle both authenticated and anonymous users
+            const user = context.user;
+            if (user) {
+                try {
+                    await RateLimitService.enforceAppCreationRateLimit(env, context.config.security.rateLimit, user, request);
+                } catch (error) {
+                    if (error instanceof Error) {
+                        return CodingAgentController.createErrorResponse(error, 429);
+                    } else {
+                        this.logger.error('Unknown error in enforceAppCreationRateLimit', error);
+                        return CodingAgentController.createErrorResponse(JSON.stringify(error), 429);
+                    }
                 }
             }
 
@@ -77,20 +79,20 @@ export class CodingAgentController extends BaseController {
                                 
             // Fetch all user model configs, api keys and agent instance at once
             const [userConfigsRecord, agentInstance] = await Promise.all([
-                modelConfigService.getUserModelConfigs(user.id),
+                user ? modelConfigService.getUserModelConfigs(user.id) : Promise.resolve({}),
                 getAgentStub(env, agentId, false, this.logger)
             ]);
                                 
             // Convert Record to Map and extract only ModelConfig properties
             const userModelConfigs = new Map();
             for (const [actionKey, mergedConfig] of Object.entries(userConfigsRecord)) {
-                if (mergedConfig.isUserOverride) {
+                if ((mergedConfig as any).isUserOverride) {
                     const modelConfig: ModelConfig = {
-                        name: mergedConfig.name,
-                        max_tokens: mergedConfig.max_tokens,
-                        temperature: mergedConfig.temperature,
-                        reasoning_effort: mergedConfig.reasoning_effort,
-                        fallbackModel: mergedConfig.fallbackModel
+                        name: (mergedConfig as any).name,
+                        max_tokens: (mergedConfig as any).max_tokens,
+                        temperature: (mergedConfig as any).temperature,
+                        reasoning_effort: (mergedConfig as any).reasoning_effort,
+                        fallbackModel: (mergedConfig as any).fallbackModel
                     };
                     userModelConfigs.set(actionKey, modelConfig);
                 }
@@ -99,11 +101,11 @@ export class CodingAgentController extends BaseController {
             const inferenceContext = {
                 userModelConfigs: Object.fromEntries(userModelConfigs),
                 agentId: agentId,
-                userId: user.id,
+                userId: user?.id || 'anonymous',
                 enableRealtimeCodeFix: true, // For now disabled from the model configs itself
             }
                                 
-            this.logger.info(`Initialized inference context for user ${user.id}`, {
+            this.logger.info(`Initialized inference context for user ${user?.id || 'anonymous'}`, {
                 modelConfigsCount: Object.keys(userModelConfigs).length,
             });
 
@@ -187,11 +189,10 @@ export class CodingAgentController extends BaseController {
                 return new Response('Forbidden: Invalid origin', { status: 403 });
             }
 
-            // Extract user for rate limiting
-            const user = context.user!;
-            if (!user) {
-                return CodingAgentController.createErrorResponse('Missing user', 401);
-            }
+            // Extract user for rate limiting (allow anonymous users for newly created agents)
+            const user = context.user;
+            // For anonymous users, we'll allow connection to newly created agents
+            // The ownership check will be handled by the agent itself
 
             this.logger.info(`WebSocket connection request for chat: ${chatId}`);
             
