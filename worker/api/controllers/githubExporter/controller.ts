@@ -2,7 +2,7 @@ import { BaseController } from '../baseController';
 import { RouteContext } from '../../types/route-context';
 import { GitHubService } from '../../../services/github';
 import { GitHubExporterOAuthProvider } from '../../../services/oauth/github-exporter';
-import { getAgentStub } from '../../../agents';
+// Removed getAgentStub import - using direct Durable Object binding
 import { createLogger } from '../../../logger';
 
 export interface GitHubExportData {
@@ -124,7 +124,8 @@ export class GitHubExporterController extends BaseController {
 
                 if (agentId) {
                     try {
-                        const agentStub = await getAgentStub(env, agentId, true, this.logger);
+                        const id = env.CodeGenObject.idFromName(agentId);
+                        const agentStub = env.CodeGenObject.get(id);
 
                         const pushRequest = {
                             cloneUrl: createResult.repository.clone_url,

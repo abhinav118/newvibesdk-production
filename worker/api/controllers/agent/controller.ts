@@ -2,7 +2,7 @@ import { WebSocketMessageResponses } from '../../../agents/constants';
 import { BaseController } from '../baseController';
 import { generateId } from '../../../utils/idGenerator';
 import { CodeGenState } from '../../../agents/core/state';
-import { getAgentStub, getTemplateForQuery } from '../../../agents';
+import { getTemplateForQuery } from '../../../agents';
 import { AgentConnectionData, AgentPreviewResponse, CodeGenArgs } from './types';
 import { ApiResponse, ControllerResponse } from '../types';
 import { RouteContext } from '../../types/route-context';
@@ -119,7 +119,10 @@ export class CodingAgentController extends BaseController {
                 this.logger.info('🔄 Fetching user configs and creating agent stub...');
                 [userConfigsRecord, agentInstance] = await Promise.all([
                     user ? modelConfigService.getUserModelConfigs(user.id) : Promise.resolve({}),
-                    getAgentStub(env, agentId, false, this.logger)
+                    (async () => {
+                        const id = env.CodeGenObject.idFromName(agentId);
+                        return env.CodeGenObject.get(id);
+                    })()
                 ]);
                 this.logger.info('✅ User configs and agent stub created successfully:', {
                     userConfigsCount: Object.keys(userConfigsRecord).length,
@@ -323,30 +326,16 @@ export class CodingAgentController extends BaseController {
             });
 
             try {
-                // Get the agent instance to handle the WebSocket connection
-                const agentInstance = await getAgentStub(env, chatId, true, this.logger);
+                // Get the Durable Object stub using the namespace binding
+                // This is the correct way to connect to a Durable Object
+                const id = env.CodeGenObject.idFromName(chatId);
+                const stub = env.CodeGenObject.get(id);
                 
-                this.logger.info(`Successfully got agent instance for chat: ${chatId}`);
+                this.logger.info(`Successfully got Durable Object stub for chat: ${chatId}`);
 
-                // Create a PartyServer-compatible URL for the WebSocket connection
-                // The agents package expects connections through PartyServer routing
-                const partyServerUrl = new URL(request.url);
-                partyServerUrl.pathname = `/party/CodeGenObject/${chatId}`;
-                
-                // Create a new request with the PartyServer URL and required headers
-                const modifiedRequest = new Request(partyServerUrl.toString(), {
-                    method: request.method,
-                    headers: {
-                        ...Object.fromEntries(request.headers.entries()),
-                        'X-Party-Namespace': 'CodeGenObject',
-                        'X-Party-Room': chatId
-                    },
-                    body: request.body,
-                    cf: request.cf
-                });
-
-                // Let the agent handle the WebSocket connection with proper PartyServer routing
-                return agentInstance.fetch(modifiedRequest);
+                // Forward the WebSocket request directly to the Durable Object
+                // The DO will handle the upgrade internally
+                return stub.fetch(request);
             } catch (error) {
                 this.logger.error(`Failed to get agent instance with ID ${chatId}:`, error);
                 // Return an appropriate WebSocket error response
@@ -392,7 +381,8 @@ export class CodingAgentController extends BaseController {
 
             try {
                 // Verify the agent instance exists
-                const agentInstance = await getAgentStub(env, agentId, true, this.logger);
+                const id = env.CodeGenObject.idFromName(agentId);
+                const agentInstance = env.CodeGenObject.get(id);
                 if (!agentInstance || !(await agentInstance.isInitialized())) {
                     return CodingAgentController.createErrorResponse<AgentConnectionData>('Agent instance not found or not initialized', 404);
                 }
@@ -434,7 +424,8 @@ export class CodingAgentController extends BaseController {
 
             try {
                 // Get the agent instance
-                const agentInstance = await getAgentStub(env, agentId, true, this.logger);
+                const id = env.CodeGenObject.idFromName(agentId);
+                const agentInstance = env.CodeGenObject.get(id);
                 
                 // Deploy the preview
                 const preview = await agentInstance.deployToSandbox();

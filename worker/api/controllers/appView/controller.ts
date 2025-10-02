@@ -2,7 +2,7 @@
 import { BaseController } from '../baseController';
 import { ApiResponse, ControllerResponse } from '../types';
 import type { RouteContext } from '../../types/route-context';
-import { getAgentStub } from '../../../agents';
+// Removed getAgentStub import - using direct Durable Object binding
 import { AppService } from '../../../database/services/AppService';
 import { 
     AppDetailsData, 
@@ -55,7 +55,8 @@ export class AppViewController extends BaseController {
             let previewUrl: string = '';
             
             try {
-                const agentStub = await getAgentStub(env, appResult.id, true, this.logger);
+                const id = env.CodeGenObject.idFromName(appResult.id);
+                const agentStub = env.CodeGenObject.get(id);
                 agentSummary = await agentStub.getSummary();
 
                 previewUrl = await agentStub.getPreviewUrlCache();
