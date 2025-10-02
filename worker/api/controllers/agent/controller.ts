@@ -328,8 +328,20 @@ export class CodingAgentController extends BaseController {
                 
                 this.logger.info(`Successfully got agent instance for chat: ${chatId}`);
 
-                // Let the agent handle the WebSocket connection directly
-                return agentInstance.fetch(request);
+                // Create a new request with the required namespace and room headers for the agents package
+                const modifiedRequest = new Request(request.url, {
+                    method: request.method,
+                    headers: {
+                        ...Object.fromEntries(request.headers.entries()),
+                        'namespace': 'CodeGenObject',
+                        'room': chatId
+                    },
+                    body: request.body,
+                    cf: request.cf
+                });
+
+                // Let the agent handle the WebSocket connection with proper headers
+                return agentInstance.fetch(modifiedRequest);
             } catch (error) {
                 this.logger.error(`Failed to get agent instance with ID ${chatId}:`, error);
                 // Return an appropriate WebSocket error response
