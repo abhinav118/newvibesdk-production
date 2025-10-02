@@ -190,7 +190,7 @@ export class CodingAgentController extends BaseController {
             }
 
             // Extract user for rate limiting (allow anonymous users for newly created agents)
-            const user = context.user;
+            const _user = context.user;
             // For anonymous users, we'll allow connection to newly created agents
             // The ownership check will be handled by the agent itself
 
