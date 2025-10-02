@@ -74,6 +74,17 @@ export async function executeInference<T extends z.AnyZodObject>(   {
     schema?: T;
     format?: SchemaFormat;
 }): Promise<InferResponseString | InferResponseObject<T> | null> {
+    logger.info('🧠 Starting executeInference', {
+        agentActionName,
+        messagesCount: messages.length,
+        maxTokens,
+        temperature,
+        modelName,
+        hasSchema: !!schema,
+        hasTools: !!tools,
+        retryLimit
+    });
+    
     let conf: ModelConfig | undefined;
     
     if (modelConfig) {

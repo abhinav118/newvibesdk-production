@@ -19,13 +19,29 @@ interface SelectTemplateArgs {
  * Uses AI to select the most suitable template for a given query.
  */
 export async function selectTemplate({ env, query, availableTemplates, inferenceContext }: SelectTemplateArgs): Promise<TemplateSelection> {
+    logger.info("🎯 Starting template selection", { 
+        query, 
+        availableTemplatesCount: availableTemplates.length,
+        agentId: inferenceContext.agentId
+    });
+    
     if (availableTemplates.length === 0) {
-        logger.info("No templates available for selection.");
+        logger.error("❌ No templates available for selection");
         return { selectedTemplateName: null, reasoning: "No templates were available to choose from.", useCase: null, complexity: null, styleSelection: null, projectName: '' };
     }
 
+    logger.info("📋 Available templates:", { 
+        templateNames: availableTemplates.map(t => t.name),
+        templateDetails: availableTemplates.map(t => ({
+            name: t.name,
+            language: t.language,
+            frameworks: t.frameworks,
+            description: t.description?.selection?.substring(0, 100) + '...'
+        }))
+    });
+
     try {
-        logger.info("Asking AI to select a template", { 
+        logger.info("🤖 Asking AI to select a template", { 
             query, 
             queryLength: query.length,
             availableTemplates: availableTemplates.map(t => t.name),
@@ -100,6 +116,7 @@ ENTROPY SEED: ${generateSecureToken(64)} - for unique results`;
             { role: "user" as MessageRole, content: userPrompt }
         ];
 
+        logger.info("🧠 Executing AI inference for template selection...");
         const { object: selection } = await executeInference({
             env,
             messages,
@@ -109,16 +126,29 @@ ENTROPY SEED: ${generateSecureToken(64)} - for unique results`;
             maxTokens: 2000,
         });
 
-
-        logger.info(`AI template selection result: ${selection.selectedTemplateName || 'None'}, Reasoning: ${selection.reasoning}`);
+        logger.info("✅ AI template selection completed:", {
+            selectedTemplateName: selection.selectedTemplateName,
+            reasoning: selection.reasoning,
+            useCase: selection.useCase,
+            complexity: selection.complexity,
+            projectName: selection.projectName
+        });
         return selection;
 
     } catch (error) {
-        logger.error("Error during AI template selection:", error);
+        logger.error("❌ Error during AI template selection:", {
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+            query,
+            availableTemplatesCount: availableTemplates.length
+        });
+        
         if (error instanceof RateLimitExceededError || error instanceof SecurityError) {
             throw error;
         }
+        
         // Fallback to no template selection in case of error
+        logger.error("🔄 AI template selection failed, falling back to default selection");
         return { selectedTemplateName: null, reasoning: "An error occurred during the template selection process.", useCase: null, complexity: null, styleSelection: null, projectName: '' };
     }
 }
