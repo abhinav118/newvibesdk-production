@@ -3,7 +3,6 @@ import { BaseController } from '../baseController';
 import { generateId } from '../../../utils/idGenerator';
 import { CodeGenState } from '../../../agents/core/state';
 import { getAgentStub, getTemplateForQuery } from '../../../agents';
-import { routeAgentRequest } from 'agents';
 import { AgentConnectionData, AgentPreviewResponse, CodeGenArgs } from './types';
 import { ApiResponse, ControllerResponse } from '../types';
 import { RouteContext } from '../../types/route-context';
@@ -324,35 +323,30 @@ export class CodingAgentController extends BaseController {
             });
 
             try {
-                // Use routeAgentRequest to properly route the WebSocket connection to the agent
-                // This handles the namespace and room headers automatically
-                const response = await routeAgentRequest(request, env, {
-                    cors: true
-                });
+                // Get the agent instance to handle the WebSocket connection
+                const agentInstance = await getAgentStub(env, chatId, true, this.logger);
                 
-                if (response) {
-                    this.logger.info(`Successfully routed WebSocket connection for chat: ${chatId}`);
-                    return response;
-                } else {
-                    // Fallback to direct agent connection if routing fails
-                    this.logger.info(`RouteAgentRequest returned null, falling back to direct connection for chat: ${chatId}`);
-                    const agentInstance = await getAgentStub(env, chatId, true, this.logger);
-                    
-                    // Create a new request with the required namespace and room headers for the agents package
-                    const modifiedRequest = new Request(request.url, {
-                        method: request.method,
-                        headers: {
-                            ...Object.fromEntries(request.headers.entries()),
-                            'namespace': 'CodeGenObject',
-                            'room': chatId
-                        },
-                        body: request.body,
-                        cf: request.cf
-                    });
+                this.logger.info(`Successfully got agent instance for chat: ${chatId}`);
 
-                    // Let the agent handle the WebSocket connection with proper headers
-                    return agentInstance.fetch(modifiedRequest);
-                }
+                // Create a PartyServer-compatible URL for the WebSocket connection
+                // The agents package expects connections through PartyServer routing
+                const partyServerUrl = new URL(request.url);
+                partyServerUrl.pathname = `/party/CodeGenObject/${chatId}`;
+                
+                // Create a new request with the PartyServer URL and required headers
+                const modifiedRequest = new Request(partyServerUrl.toString(), {
+                    method: request.method,
+                    headers: {
+                        ...Object.fromEntries(request.headers.entries()),
+                        'X-Party-Namespace': 'CodeGenObject',
+                        'X-Party-Room': chatId
+                    },
+                    body: request.body,
+                    cf: request.cf
+                });
+
+                // Let the agent handle the WebSocket connection with proper PartyServer routing
+                return agentInstance.fetch(modifiedRequest);
             } catch (error) {
                 this.logger.error(`Failed to get agent instance with ID ${chatId}:`, error);
                 // Return an appropriate WebSocket error response

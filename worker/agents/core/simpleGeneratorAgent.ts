@@ -389,6 +389,61 @@ export class SimpleCodeGeneratorAgent extends Agent<Env, CodeGenState> {
         return this.sandboxServiceClient;
     }
 
+    /**
+     * Initialize or reinitialize the sandbox service client
+     * Used for recovery after Durable Object resets or network errors
+     */
+    async initializeSandboxService(): Promise<void> {
+        this.logger().info('Initializing sandbox service client');
+        this.sandboxServiceClient = getSandboxService(this.getSessionId());
+        
+        // Initialize the sandbox service if it has an initialize method
+        if (this.sandboxServiceClient && typeof this.sandboxServiceClient.initialize === 'function') {
+            await this.sandboxServiceClient.initialize();
+        }
+    }
+
+    /**
+     * Execute a sandbox service operation with error handling for Durable Object resets
+     * @param operation The sandbox service operation to execute
+     * @param operationName Name of the operation for logging
+     * @returns The result of the operation
+     */
+    async executeSandboxOperation<T>(
+        operation: () => Promise<T>,
+        operationName: string
+    ): Promise<T> {
+        try {
+            return await operation();
+        } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            
+            if (errorMsg.includes('Network connection lost') || 
+                errorMsg.includes('Container service disconnected') ||
+                errorMsg.includes('Durable Object reset because its code was updated')) {
+                
+                this.logger().warn(`Sandbox service error in ${operationName}, resetting session and retrying`, {
+                    error: errorMsg,
+                    operation: operationName
+                });
+                
+                // Reset and reinitialize
+                this.resetSessionId();
+                await this.initializeSandboxService();
+                
+                // Retry the operation once
+                try {
+                    return await operation();
+                } catch (retryError) {
+                    this.logger().error(`Retry failed for ${operationName}`, retryError);
+                    throw retryError;
+                }
+            }
+            
+            throw error;
+        }
+    }
+
     isCodeGenerating(): boolean {
         return this.isGenerating;
     }
@@ -1770,9 +1825,15 @@ export class SimpleCodeGeneratorAgent extends Agent<Env, CodeGenState> {
         } catch (error) {
             this.logger().error("Error deploying to sandbox service:", error);
             const errorMsg = error instanceof Error ? error.message : String(error);
-            if (errorMsg.includes('Network connection lost') || errorMsg.includes('Container service disconnected')) {
-                // For this particular error, reset the sandbox sessionId
-                this.resetSessionId();
+            // Use the centralized error handling for sandbox service errors
+            if (errorMsg.includes('Network connection lost') || 
+                errorMsg.includes('Container service disconnected') ||
+                errorMsg.includes('Durable Object reset because its code was updated')) {
+                
+                this.logger().warn("Sandbox service error detected in deployment, will be handled by retry mechanism", {
+                    error: errorMsg,
+                    sessionId: this.state.sandboxInstanceId
+                });
             }
 
             this.setState({
