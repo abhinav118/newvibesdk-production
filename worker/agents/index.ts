@@ -24,32 +24,49 @@ async function getAgentByName(
 }
 
 export async function getAgentStub(env: Env, agentId: string, searchInOtherJurisdictions: boolean = false, logger: StructuredLogger) : Promise<any> {
+    logger.info('🔧 Starting getAgentStub', { agentId, searchInOtherJurisdictions });
+    
+    // Check if CodeGenObject namespace is available
+    if (!env.CodeGenObject) {
+        logger.error('❌ CodeGenObject namespace not available in environment');
+        throw new Error('CodeGenObject namespace not available in environment');
+    }
+    logger.info('✅ CodeGenObject namespace is available');
+    
     if (searchInOtherJurisdictions) {
         // Try multiple jurisdictions until we find the agent
         const jurisdictions = [undefined, 'eu'];
         for (const jurisdiction of jurisdictions) {
             try {
-                logger.info(`Agent ${agentId} retreiving from jurisdiction ${jurisdiction}`);
+                logger.info(`🔍 Agent ${agentId} retrieving from jurisdiction ${jurisdiction}`);
                 const stub = await getAgentByName(env.CodeGenObject, agentId, {
                     locationHint: 'enam',
                     jurisdiction: jurisdiction,
                 });
                 const isInitialized = await stub.isInitialized()
                 if (isInitialized) {
-                    logger.info(`Agent ${agentId} found in jurisdiction ${jurisdiction}`);
+                    logger.info(`✅ Agent ${agentId} found in jurisdiction ${jurisdiction}`);
                     return stub
                 }
             } catch (error) {
-                logger.info(`Agent ${agentId} not found in jurisdiction ${jurisdiction}`);
+                logger.info(`❌ Agent ${agentId} not found in jurisdiction ${jurisdiction}:`, error);
             }
         }
         // If all jurisdictions fail, throw an error
         // throw new Error(`Agent ${agentId} not found in any jurisdiction`);
     }
-    logger.info(`Agent ${agentId} retrieved directly`);
-    return getAgentByName(env.CodeGenObject, agentId, {
-        locationHint: 'enam'
-    });
+    
+    logger.info(`🎯 Agent ${agentId} retrieving directly`);
+    try {
+        const stub = await getAgentByName(env.CodeGenObject, agentId, {
+            locationHint: 'enam'
+        });
+        logger.info(`✅ Agent ${agentId} stub created successfully`);
+        return stub;
+    } catch (error) {
+        logger.error(`❌ Failed to create agent stub for ${agentId}:`, error);
+        throw error;
+    }
 }
 
 export async function getAgentState(env: Env, agentId: string, searchInOtherJurisdictions: boolean = false, logger: StructuredLogger) : Promise<CodeGenState> {
@@ -88,14 +105,29 @@ export async function getTemplateForQuery(
     query: string,
     logger: StructuredLogger,
 ) : Promise<{sandboxSessionId: string, templateDetails: TemplateDetails, selection: TemplateSelection}> {
+    logger.info('🎯 Starting getTemplateForQuery', { query, agentId: inferenceContext.agentId });
+    
     // Fetch available templates
+    logger.info('📋 Fetching available templates from sandbox service...');
     const templatesResponse = await SandboxSdkClient.listTemplates();
+    logger.info('📋 Templates response received:', { 
+        success: templatesResponse?.success, 
+        templatesCount: templatesResponse?.templates?.length || 0,
+        error: templatesResponse?.error
+    });
+    
     if (!templatesResponse || !templatesResponse.success) {
-        throw new Error('Failed to fetch templates from sandbox service');
+        logger.error('❌ Failed to fetch templates from sandbox service:', {
+            response: templatesResponse,
+            error: templatesResponse?.error
+        });
+        throw new Error(`Failed to fetch templates from sandbox service: ${templatesResponse?.error || 'Unknown error'}`);
     }
 
     const sandboxSessionId = generateId();
+    logger.info('🆔 Generated sandbox session ID:', { sandboxSessionId });
         
+    logger.info('🤖 Starting template selection and sandbox service initialization...');
     const [analyzeQueryResponse, sandboxClient] = await Promise.all([
             selectTemplate({
                 env: env,
@@ -106,26 +138,69 @@ export async function getTemplateForQuery(
             getSandboxService(sandboxSessionId)
         ]);
         
-        logger.info('Selected template', { selectedTemplate: analyzeQueryResponse });
+    logger.info('✅ Template selection and sandbox service completed:', { 
+        selectedTemplate: analyzeQueryResponse,
+        sandboxClientType: typeof sandboxClient,
+        hasSandboxClient: !!sandboxClient
+    });
             
-        // Find the selected template by name in the available templates
-        if (!analyzeQueryResponse.selectedTemplateName) {
-            logger.error('No suitable template found for code generation');
-            throw new Error('No suitable template found for code generation');
-        }
+    // Find the selected template by name in the available templates
+    logger.info('🔍 Validating selected template...', { 
+        selectedTemplateName: analyzeQueryResponse.selectedTemplateName,
+        reasoning: analyzeQueryResponse.reasoning 
+    });
+    
+    if (!analyzeQueryResponse.selectedTemplateName) {
+        logger.error('❌ No suitable template found for code generation:', {
+            analyzeQueryResponse,
+            availableTemplates: templatesResponse.templates.map(t => t.name)
+        });
+        throw new Error('No suitable template found for code generation');
+    }
             
-        const selectedTemplate = templatesResponse.templates.find(template => template.name === analyzeQueryResponse.selectedTemplateName);
-        if (!selectedTemplate) {
-            logger.error('Selected template not found');
-            throw new Error('Selected template not found');
-        }
-        // Now fetch all the files from the instance
-        const templateDetailsResponse = await sandboxClient.getTemplateDetails(selectedTemplate.name);
-        if (!templateDetailsResponse.success || !templateDetailsResponse.templateDetails) {
-            logger.error('Failed to fetch files', { templateDetailsResponse });
-            throw new Error('Failed to fetch files');
-        }
+    const selectedTemplate = templatesResponse.templates.find(template => template.name === analyzeQueryResponse.selectedTemplateName);
+    logger.info('🎯 Template lookup result:', { 
+        selectedTemplateName: analyzeQueryResponse.selectedTemplateName,
+        found: !!selectedTemplate,
+        templateDetails: selectedTemplate ? {
+            name: selectedTemplate.name,
+            language: selectedTemplate.language,
+            frameworks: selectedTemplate.frameworks
+        } : null
+    });
+    
+    if (!selectedTemplate) {
+        logger.error('❌ Selected template not found in available templates:', {
+            selectedTemplateName: analyzeQueryResponse.selectedTemplateName,
+            availableTemplates: templatesResponse.templates.map(t => t.name)
+        });
+        throw new Error(`Selected template '${analyzeQueryResponse.selectedTemplateName}' not found in available templates`);
+    }
+    // Now fetch all the files from the instance
+    logger.info('📁 Fetching template details...', { templateName: selectedTemplate.name });
+    const templateDetailsResponse = await sandboxClient.getTemplateDetails(selectedTemplate.name);
+    logger.info('📁 Template details response:', { 
+        success: templateDetailsResponse.success,
+        hasTemplateDetails: !!templateDetailsResponse.templateDetails,
+        filesCount: templateDetailsResponse.templateDetails?.files?.length || 0,
+        error: templateDetailsResponse.error
+    });
+    
+    if (!templateDetailsResponse.success || !templateDetailsResponse.templateDetails) {
+        logger.error('❌ Failed to fetch template details:', { 
+            templateDetailsResponse,
+            templateName: selectedTemplate.name
+        });
+        throw new Error(`Failed to fetch template details: ${templateDetailsResponse.error || 'Unknown error'}`);
+    }
             
-        const templateDetails = templateDetailsResponse.templateDetails;
-        return { sandboxSessionId, templateDetails, selection: analyzeQueryResponse };
+    const templateDetails = templateDetailsResponse.templateDetails;
+    logger.info('✅ getTemplateForQuery completed successfully:', {
+        sandboxSessionId,
+        templateName: templateDetails.name,
+        filesCount: templateDetails.files?.length || 0,
+        selectedTemplateName: analyzeQueryResponse.selectedTemplateName
+    });
+    
+    return { sandboxSessionId, templateDetails, selection: analyzeQueryResponse };
 }
