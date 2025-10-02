@@ -1,6 +1,5 @@
 
 /// <reference path="../../worker-configuration.d.ts" />
-import { SmartCodeGeneratorAgent } from './core/smartGeneratorAgent';
 import { CodeGenState } from './core/state';
 import { generateId } from '../utils/idGenerator';
 import { StructuredLogger } from '../logger';
