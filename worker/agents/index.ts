@@ -1,6 +1,6 @@
 
+/// <reference path="../../../worker-configuration.d.ts" />
 import { SmartCodeGeneratorAgent } from './core/smartGeneratorAgent';
-import { getAgentByName } from 'agents';
 import { CodeGenState } from './core/state';
 import { generateId } from '../utils/idGenerator';
 import { StructuredLogger } from '../logger';
@@ -10,6 +10,19 @@ import { selectTemplate } from './planning/templateSelector';
 import { getSandboxService } from '../services/sandbox/factory';
 import { TemplateDetails } from '../services/sandbox/sandboxTypes';
 import { TemplateSelection } from './schemas';
+
+// Utility function to get Durable Object stub by name
+async function getAgentByName<TEnv, TAgent>(
+    namespace: DurableObjectNamespace<TAgent>,
+    name: string,
+    options?: {
+        locationHint?: string;
+        jurisdiction?: DurableObjectJurisdiction;
+    }
+): Promise<DurableObjectStub<TAgent>> {
+    const id = namespace.idFromName(name);
+    return namespace.get(id, options);
+}
 
 export async function getAgentStub(env: Env, agentId: string, searchInOtherJurisdictions: boolean = false, logger: StructuredLogger) : Promise<DurableObjectStub<SmartCodeGeneratorAgent>> {
     if (searchInOtherJurisdictions) {
