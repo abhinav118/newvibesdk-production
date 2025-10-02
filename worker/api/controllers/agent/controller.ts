@@ -189,9 +189,7 @@ export class CodingAgentController extends BaseController {
                 return new Response('Forbidden: Invalid origin', { status: 403 });
             }
 
-            // Extract user for rate limiting (allow anonymous users for newly created agents)
-            const _user = context.user;
-            // For anonymous users, we'll allow connection to newly created agents
+            // Allow anonymous users for newly created agents
             // The ownership check will be handled by the agent itself
 
             this.logger.info(`WebSocket connection request for chat: ${chatId}`);
