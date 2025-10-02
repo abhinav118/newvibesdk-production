@@ -364,6 +364,16 @@ type ServerLogMessage = {
 	source?: string;
 };
 
+type MCPServersMessage = {
+	type: 'cf_agent_mcp_servers';
+	mcp: {
+		servers: Record<string, any>;
+		tools: any[];
+		prompts: any[];
+		resources: any[];
+	};
+};
+
 export type WebSocketMessage =
 	| StateMessage
 	| GenerationStartedMessage
@@ -410,7 +420,8 @@ export type WebSocketMessage =
 	| ModelConfigsInfoMessage
 	| TerminalCommandMessage
 	| TerminalOutputMessage
-	| ServerLogMessage;
+	| ServerLogMessage
+	| MCPServersMessage;
 
 // A type representing all possible message type strings (e.g., 'generation_started', 'file_generating', etc.)
 export type WebSocketMessageType = WebSocketMessage['type'];

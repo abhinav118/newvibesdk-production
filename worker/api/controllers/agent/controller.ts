@@ -326,16 +326,26 @@ export class CodingAgentController extends BaseController {
             });
 
             try {
-                // Get the Durable Object stub using the namespace binding
-                // This is the correct way to connect to a Durable Object
+                // Get the Durable Object stub using the proper binding
                 const id = env.CodeGenObject.idFromName(chatId);
                 const stub = env.CodeGenObject.get(id);
                 
                 this.logger.info(`Successfully got Durable Object stub for chat: ${chatId}`);
 
-                // Forward the WebSocket request directly to the Durable Object
-                // The DO will handle the upgrade internally
-                return stub.fetch(request);
+                // Create a new request with the proper URL path that the agents package expects
+                // The agents package expects WebSocket connections to come through a specific path
+                const agentUrl = new URL(request.url);
+                agentUrl.pathname = `/party/CodeGenObject/${chatId}`;
+                
+                const agentRequest = new Request(agentUrl.toString(), {
+                    method: request.method,
+                    headers: request.headers,
+                    body: request.body,
+                    cf: request.cf
+                });
+
+                // Forward the WebSocket request to the Durable Object with the correct path
+                return stub.fetch(agentRequest);
             } catch (error) {
                 this.logger.error(`Failed to get agent instance with ID ${chatId}:`, error);
                 // Return an appropriate WebSocket error response

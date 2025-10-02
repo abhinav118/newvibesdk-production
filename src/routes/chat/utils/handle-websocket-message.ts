@@ -725,6 +725,14 @@ Message: ${message.errors.map((e: any) => e.message).join('\n').trim()}`;
                 break;
             }
 
+            case 'cf_agent_mcp_servers': {
+                // Handle MCP (Model Context Protocol) server updates
+                logger.debug('🔄 MCP servers update received:', message.mcp);
+                // MCP servers are used for external tool integrations
+                // No UI update needed for this message type
+                break;
+            }
+
             default:
                 logger.warn('Unhandled message:', message);
         }
