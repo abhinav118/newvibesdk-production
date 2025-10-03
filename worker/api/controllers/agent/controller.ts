@@ -326,25 +326,51 @@ export class CodingAgentController extends BaseController {
             });
 
             try {
+                // Ensure this is a WebSocket upgrade request
+                const upgradeHeader = request.headers.get('Upgrade');
+                if (upgradeHeader !== 'websocket') {
+                    return new Response('Expected Upgrade: websocket', { status: 426 });
+                }
+
+                // Log current headers for debugging
+                this.logger.info('WebSocket request headers:', {
+                    headers: Object.fromEntries(request.headers.entries()),
+                    url: request.url,
+                    chatId,
+                    upgradeHeader
+                });
+
                 // Get the Durable Object stub using the proper binding
                 const id = env.CodeGenObject.idFromName(chatId);
                 const stub = env.CodeGenObject.get(id);
                 
                 this.logger.info(`Successfully got Durable Object stub for chat: ${chatId}`);
 
-                // Create a new request with the proper URL path that the agents package expects
-                // The agents package expects WebSocket connections to come through a specific path
-                const agentUrl = new URL(request.url);
-                agentUrl.pathname = `/party/CodeGenObject/${chatId}`;
+                // Create headers with the required namespace and room information
+                const headers = new Headers(request.headers);
+                headers.set('X-Namespace', 'CodeGenObject');
+                headers.set('X-Room', chatId);
                 
-                const agentRequest = new Request(agentUrl.toString(), {
+                // Log the headers we're adding
+                this.logger.info('Adding required headers:', {
+                    'X-Namespace': 'CodeGenObject',
+                    'X-Room': chatId
+                });
+
+                // Create a new request with the required headers
+                const agentRequest = new Request(request.url, {
                     method: request.method,
-                    headers: request.headers,
+                    headers: headers,
                     body: request.body,
                     cf: request.cf
                 });
 
-                // Forward the WebSocket request to the Durable Object with the correct path
+                // Forward the WebSocket request to the Durable Object with proper headers
+                this.logger.info('Forwarding request to Durable Object with headers:', {
+                    finalHeaders: Object.fromEntries(agentRequest.headers.entries()),
+                    url: agentRequest.url
+                });
+                
                 return stub.fetch(agentRequest);
             } catch (error) {
                 this.logger.error(`Failed to get agent instance with ID ${chatId}:`, error);
